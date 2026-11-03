@@ -1,0 +1,45 @@
+[project]
+name = "solargrid"
+version = "0.1.0"
+description = "Wykrywanie instalacji PV na dachach (Małopolska) i szacowanie mocy"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "torch>=2.8",
+  "torchvision",
+  "timm",
+  "segmentation-models-pytorch",
+  "transformers",
+  "albumentations",
+  "rasterio",
+  "geopandas",
+  "shapely>=2",
+  "pyproj",
+  "lxml",
+  "requests",
+  "numpy",
+  "pandas",
+  "tqdm",
+  "fastapi",
+  "uvicorn",
+  "sam2",
+  "huggingface-hub>=2.3.0",
+  "opencv-python-headless>=5.0.0.93",
+  "pillow>=13.0.0",
+]
+
+[tool.uv]
+package = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+# CUDA tylko na serwerze (Linux); na Macu zwykłe koła z PyPI (MPS).
+torch = { index = "pytorch-cu128", marker = "sys_platform == 'linux'" }
+torchvision = { index = "pytorch-cu128", marker = "sys_platform == 'linux'" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

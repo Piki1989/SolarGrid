@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ocena modeli PV</title>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f6f8fa; --fg: #1f2328; --muted: #656d76; --line: #d0d7de;
+    --accent: #f5a524; --good: #1a7f37; --bad: #cf222e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c1f24; --panel: #24292f; --fg: #e6edf3; --muted: #9aa4af; --line: #30363d; --good: #3fb950; --bad: #f85149; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
+  main { max-width: 1400px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+  h1 { font-size: 18px; margin: 0; }
+  .progress { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 12px; }
+  .bar div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .help { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .imgs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  figure { margin: 0; background: var(--panel); border-radius: 10px; overflow: hidden; }
+  figure img { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; background: #000; }
+  figcaption { padding: 6px 10px; font-weight: 600; }
+  .votes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+  .votes button { font: inherit; font-weight: 600; padding: 14px 8px; border-radius: 10px; border: 2px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+  .votes button:hover { border-color: var(--accent); }
+  .votes button.chosen { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
+  .votes kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; margin-right: 6px; border: 1px solid var(--line); border-radius: 4px; font: 12px ui-monospace, monospace; color: var(--muted); }
+  nav { display: flex; justify-content: space-between; margin-top: 12px; gap: 10px; }
+  nav button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+  .done { padding: 40px 16px; text-align: center; font-size: 16px; }
+  .err { color: var(--bad); }
+  @media (max-width: 760px) {
+    .imgs { grid-template-columns: 1fr; }
+    .votes { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Który model lepiej zaznacza panele?</h1>
+    <span class="progress" id="progress"></span>
+  </header>
+  <div class="bar"><div id="bar"></div></div>
+  <p class="help">Porównaj czerwone zaznaczenia A i B z samym zdjęciem. Liczy się to, co jest na dachu w niebieskim obrysie i tuż przy nim. Jeśli na zdjęciu nie ma paneli, dobry model nic nie zaznacza. Skróty: <b>1</b>–<b>4</b> to ocena, <b>←</b> i <b>→</b> przełączają domy.</p>
+  <div id="view"></div>
+</main>
+<script>
+const VOTES = [
+  ["a", "A lepszy"], ["b", "B lepszy"], ["oba_dobre", "Oba dobre"], ["oba_zle", "Oba złe"],
+];
+const SET = new URLSearchParams(location.search).get("set") || "ocena_v1";
+let items = [], pos = 0;
+const view = document.getElementById("view");
+
+function render() {
+  const rated = items.filter(i => i.vote).length;
+  document.getElementById("progress").textContent = `ocenionych ${rated} z ${items.length}`;
+  document.getElementById("bar").style.width = `${100 * rated / Math.max(items.length, 1)}%`;
+  if (pos >= items.length) {
+    view.innerHTML = `<div class="done">Dziękuję, wszystkie domy ocenione.<br><br><button onclick="pos=0;render()">Wróć do początku</button></div>`;
+    return;
+  }
+  const it = items[pos];
+  const src = s => `/review/${SET}/img/${it.id}_${s}.jpg`;
+  view.innerHTML = `
+    <div class="imgs">
+      <figure><img src="${src(0)}" alt="Zdjęcie domu bez zaznaczeń"><figcaption>Zdjęcie</figcaption></figure>
+      <figure><img src="${src("a")}" alt="Zaznaczenie modelu A"><figcaption>A</figcaption></figure>
+      <figure><img src="${src("b")}" alt="Zaznaczenie modelu B"><figcaption>B</figcaption></figure>
+    </div>
+    <div class="votes">${VOTES.map(([v, label], k) =>
+      `<button data-v="${v}" class="${it.vote === v ? "chosen" : ""}"><kbd>${k + 1}</kbd>${label}</button>`).join("")}</div>
+    <nav>
+      <button id="prev" ${pos === 0 ? "disabled" : ""}>← Poprzedni</button>
+      <span class="progress">dom ${pos + 1} / ${items.length}</span>
+      <button id="next">Następny →</button>
+    </nav>`;
+  view.querySelectorAll(".votes button").forEach(b => b.addEventListener("click", () => vote(b.dataset.v)));
+  document.getElementById("prev").onclick = () => { pos = Math.max(0, pos - 1); render(); };
+  document.getElementById("next").onclick = () => { pos++; render(); };
+  // Następny dom ładuje się w tle, żeby przejście było natychmiastowe.
+  const nxt = items[pos + 1];
+  if (nxt) for (const s of ["0", "a", "b"]) new Image().src = `/review/${SET}/img/${nxt.id}_${s}.jpg`;
+}
+
+async function vote(v) {
+  const it = items[pos];
+  try {
+    const r = await fetch("/api/ocena", { method: "POST", headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ set: SET, id: it.id, vote: v }) });
+    if (!r.ok) throw new Error(r.statusText);
+    it.vote = v;
+    pos++;
+    render();
+  } catch (e) {
+    view.insertAdjacentHTML("beforeend", `<p class="err">Nie zapisano oceny (${e.message}). Sprawdź tunel/VPN i spróbuj ponownie.</p>`);
+  }
+}
+
+document.addEventListener("keydown", e => {
+  if (pos >= items.length) return;
+  const k = Number(e.key);
+  if (k >= 1 && k <= 4) vote(VOTES[k - 1][0]);
+  else if (e.key === "ArrowRight") { pos++; render(); }
+  else if (e.key === "ArrowLeft") { pos = Math.max(0, pos - 1); render(); }
+});
+
+fetch(`/api/ocena/items?set=${encodeURIComponent(SET)}`).then(r => r.json()).then(data => {
+  items = data;
+  pos = Math.max(0, items.findIndex(i => !i.vote));  // wznów od pierwszego nieocenionego
+  if (items.every(i => i.vote)) pos = items.length;
+  render();
+}).catch(e => { view.innerHTML = `<p class="err">Nie udało się wczytać domów: ${e.message}</p>`; });
+</script>
+</body>
+</html>

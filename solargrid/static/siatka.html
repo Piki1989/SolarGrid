@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Przegląd masek PV</title>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f6f8fa; --fg: #1f2328; --muted: #656d76; --line: #d0d7de;
+    --accent: #f5a524; --good: #1a7f37; --bad: #cf222e; --stage: #0d1117;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c1f24; --panel: #24292f; --fg: #e6edf3; --muted: #9aa4af; --line: #30363d; --good: #3fb950; --bad: #f85149; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
+  body { display: grid; grid-template-rows: auto 1fr; height: 100vh; overflow: hidden; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  h1 { font-size: 15px; margin: 0; }
+  h1 a { font-size: 12px; font-weight: 400; margin-left: 6px; }
+  .muted { color: var(--muted); }
+  .bar { width: 140px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .bar div { height: 100%; background: var(--accent); width: 0; }
+  .grow { flex: 1; }
+  button, select, input { font: inherit; color: var(--fg); }
+  select, input[type=text] { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+  input[type=text] { width: 110px; }
+  button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-weight: 600; }
+  button.go { background: var(--accent); border-color: var(--accent); color: #1f2328; }
+  kbd { display: inline-block; min-width: 1.5em; padding: 0 4px; border: 1px solid var(--line); border-radius: 4px; font: 11px ui-monospace, monospace; color: var(--muted); text-align: center; }
+  button.go kbd { color: #1f2328; border-color: rgba(0,0,0,.3); }
+  main { overflow: hidden; display: grid; place-content: center; padding: 10px; background: var(--stage); }
+  #grid { display: grid; gap: 8px; }
+  .tile { position: relative; cursor: pointer; border-radius: 6px; overflow: hidden; outline: 3px solid transparent; outline-offset: -3px; user-select: none; }
+  .tile img, .tile canvas { position: absolute; inset: 0; width: 100%; height: 100%; -webkit-user-drag: none; }
+  .tile canvas { pointer-events: none; }
+  body.hide .tile canvas { visibility: hidden; }
+  .tile .num, .tile .tag { position: absolute; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,.65); color: #fff; font-size: 12px; font-weight: 600; }
+  .tile .num { left: 5px; top: 5px; }
+  .tile .num:empty { display: none; }
+  .tile .kwp { position: absolute; left: 5px; bottom: 5px; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,.65); color: #fff; font-size: 12px; }
+  .tile .tag { right: 5px; top: 5px; display: none; }
+  .tile[data-state=zla] { outline-color: #ff3b30; }
+  .tile[data-state=zla] .tag { display: block; background: #ff3b30; }
+  .tile[data-state=brak] { outline-color: #8b949e; }
+  .tile[data-state=brak] img { filter: grayscale(1) brightness(.6); }
+  .tile[data-state=brak] canvas { visibility: hidden; }
+  .tile[data-state=brak] .tag { display: block; background: #57606a; }
+  .tile[data-state=edyt] { outline-color: var(--accent); }
+  .tile[data-state=edyt] .tag { display: block; background: var(--accent); color: #1f2328; }
+  .tile[data-state=zablokowany] { cursor: default; opacity: .5; }
+  .tile[data-state=zablokowany] .tag { display: block; }
+  #zoom { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; place-items: center; z-index: 5; }
+  #zoom.on { display: grid; }
+  #zoom div { position: relative; width: min(92vh, 92vw); aspect-ratio: 1; cursor: crosshair; }
+  #zoom img { image-rendering: auto; }
+  #zoom p { position: absolute; left: 0; right: 0; bottom: 8px; margin: 0; text-align: center; color: #fff; font-size: 13px; }
+  #zoom img, #zoom canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  body.hide #zoom canvas { visibility: hidden; }
+  #msg { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); padding: 6px 12px; border-radius: 6px; background: rgba(0,0,0,.8); color: #fff; display: none; z-index: 6; }
+  .keys { font-size: 12px; }
+  .err { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Przegląd masek PV<a href="#" id="editlink">edytor</a></h1>
+  <div><div class="muted" id="progress"></div><div class="bar"><div id="bar"></div></div></div>
+  <label class="muted">na stronie
+    <select id="size"><option>6</option><option>9</option><option selected>12</option><option>16</option><option>20</option></select>
+  </label>
+  <label class="muted">kolejność
+    <select id="order"><option value="hard">duże obiekty, potem niepewne</option><option value="easy">najpierw pewne</option></select>
+  </label>
+  <label class="muted">kto <input type="text" id="who" placeholder="np. michal"></label>
+  <span class="grow"></span>
+  <span class="muted keys"><kbd>klik</kbd>/<kbd>1–9</kbd> zła maska → brak PV → dobra · <kbd>Shift</kbd>+klik brak PV · <kbd>Z</kbd> powiększ i klikaj fałszywe plamy · <kbd>H</kbd> ukryj maski · <kbd>⌘</kbd>+klik edytor</span>
+  <button id="b-prev"><kbd>←</kbd> Wstecz</button>
+  <button class="go" id="b-ok"><kbd>Enter</kbd> Zatwierdź stronę</button>
+</header>
+<main><div id="grid"></div></main>
+<div id="zoom"><div><img alt=""><canvas></canvas></div>
+  <p><kbd>klik</kbd> w plamę usuwa ją z maski · <kbd>⌘Z</kbd> cofnij · <kbd>R</kbd> przywróć · <kbd>N</kbd> brak PV · <kbd>← →</kbd> sąsiedni kafelek · <kbd>Z</kbd>/<kbd>Esc</kbd> zamknij</p></div>
+<div id="msg"></div>
+<script>
+// Szybki przegląd propozycji modelu: wszystkie kafelki na stronie są „dobre”, dopóki ich nie
+// klikniesz. Enter zapisuje stronę: dobre -> maska modelu idzie do treningu (ok), złe -> kolejka
+// „do poprawy” w edytorze, brak PV -> pusta maska. Tylko kafelki treningowe startujące od
+// propozycji; test zostaje w edytorze, żeby był dokładny.
+const SET = new URLSearchParams(location.search).get("set") || "popraw_v1";
+const $ = id => document.getElementById(id);
+const grid = $("grid"), zoom = $("zoom");
+const NEXT = { ok: "zla", zla: "brak", brak: "ok", edyt: "zla" };
+const FROM_STATUS = { ok: "ok", do_poprawy: "zla", brak_pv: "brak" };
+const TO_STATUS = { ok: "akceptuj", zla: "do_poprawy", brak: "brak_pv", edyt: "zapisz" };
+const TAGS = { zla: "do poprawy", brak: "brak PV", edyt: "poprawiona" };
+const masks = new Map();  // id -> { m: bieżąca maska 0/1, orig, w, h, undo: [[indeksy usuniętej plamy]] }
+let zoomK = null;
+
+let items = [], page = [], history = [], hist = -1, t0 = 0, busy = false, hover = null;
+let started = performance.now(), doneHere = 0;
+
+try { $("who").value = localStorage.getItem("popraw_who") || ""; } catch (e) {}
+$("who").addEventListener("change", () => { try { localStorage.setItem("popraw_who", $("who").value); } catch (e) {} });
+try { $("size").value = localStorage.getItem("siatka_size") || "12"; } catch (e) {}
+$("editlink").href = `/popraw?set=${encodeURIComponent(SET)}`;
+
+function say(t, ms = 1800) { const m = $("msg"); m.textContent = t; m.style.display = "block"; clearTimeout(say.h); say.h = setTimeout(() => m.style.display = "none", ms); }
+
+const eligible = i => i.split === "train" && i.start === "auto";
+function queue() {
+  const q = items.filter(i => eligible(i) && !i.status);
+  return $("order").value === "easy" ? q.reverse() : q;
+}
+
+function renderMeta() {
+  const all = items.filter(eligible), done = all.filter(i => i.status).length;
+  const rate = doneHere ? ` · ${(doneHere / ((performance.now() - started) / 60000)).toFixed(0)} kafelków/min` : "";
+  const c = s => all.filter(i => i.status === s).length;
+  $("progress").textContent = `${done} z ${all.length} (ok ${c("ok")}, poprawione ${c("poprawione")}, do poprawy ${c("do_poprawy")}, brak PV ${c("brak_pv")})${rate}`;
+  $("bar").style.width = `${100 * done / Math.max(all.length, 1)}%`;
+}
+
+// Maska z auto/<id>.png (0/1) -> czerwone wypełnienie + jaśniejszy kontur.
+function overlay(id, canvas) {
+  const im = new Image();
+  im.onload = () => {
+    const w = im.width, h = im.height, off = new OffscreenCanvas(w, h), o = off.getContext("2d");
+    o.drawImage(im, 0, 0);
+    const src = o.getImageData(0, 0, w, h).data, m = new Uint8Array(w * h);
+    for (let k = 0; k < m.length; k++) m[k] = src[4 * k] > 0;
+    masks.set(id, { m, orig: m.slice(), w, h, undo: [] });
+    paint(id, canvas);
+  };
+  im.src = `/review/${SET}/auto/${id}.png`;
+}
+
+function paint(id, canvas) {
+  const { m, w, h } = masks.get(id), e = Math.max(1, Math.round(w / 500));
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d"), out = ctx.createImageData(w, h), d = out.data;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const k = y * w + x;
+    if (!m[k]) continue;
+    const edge = x < e || y < e || x >= w - e || y >= h - e || !m[k - e] || !m[k + e] || !m[k - e * w] || !m[k + e * w];
+    d.set(edge ? [255, 230, 0, 255] : [255, 59, 48, 90], 4 * k);
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+function setState(k, state) {
+  const t = grid.children[k];
+  t.dataset.state = state;
+  t.querySelector(".tag").textContent = TAGS[state] || "";
+}
+
+// Usuwa plamę maski (8-spójną) najbliższą klikniętego punktu: fałszywe okno, świetlik, kolektor.
+function removeBlob(k, x, y) {
+  const it = page[k], mk = masks.get(it.id);
+  if (!mk) return;
+  const { m, w, h } = mk, r = Math.max(3, Math.round(w / 60));
+  let seed = -1, best = Infinity;
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const xx = x + dx, yy = y + dy, d = dx * dx + dy * dy;
+    if (xx >= 0 && yy >= 0 && xx < w && yy < h && m[yy * w + xx] && d < best) { best = d; seed = yy * w + xx; }
+  }
+  if (seed < 0) { say("Tu nie ma maski"); return; }
+  const removed = [seed], stack = [seed];
+  m[seed] = 0;
+  while (stack.length) {
+    const q = stack.pop(), qx = q % w, qy = (q - qx) / w;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = qx + dx, yy = qy + dy, n = yy * w + xx;
+      if (xx >= 0 && yy >= 0 && xx < w && yy < h && m[n]) { m[n] = 0; removed.push(n); stack.push(n); }
+    }
+  }
+  mk.undo.push(removed);
+  edited(k);
+}
+
+function edited(k) {
+  const it = page[k], mk = masks.get(it.id);
+  const changed = mk.m.some((v, i) => v !== mk.orig[i]);
+  setState(k, changed ? "edyt" : "ok");
+  paint(it.id, grid.children[k].querySelector("canvas"));
+  if (zoomK === k) paint(it.id, zoom.querySelector("canvas"));
+}
+
+function layout() {
+  const n = page.length, gap = 8;
+  const W = grid.parentElement.clientWidth - 20, H = grid.parentElement.clientHeight - 20;
+  let best = 0, cols = 1;
+  for (let c = 1; c <= n; c++) {
+    const r = Math.ceil(n / c), s = Math.min((W - (c - 1) * gap) / c, (H - (r - 1) * gap) / r);
+    if (s > best) { best = s; cols = c; }
+  }
+  grid.style.gridTemplateColumns = `repeat(${cols}, ${Math.floor(best)}px)`;
+  for (const t of grid.children) t.style.height = `${Math.floor(best)}px`;
+}
+
+function show(ids) {
+  page = ids.map(id => items.find(i => i.id === id));
+  grid.innerHTML = "";
+  page.forEach((it, k) => {
+    const t = document.createElement("div");
+    t.className = "tile";
+    t.dataset.state = it.status == null ? "ok" : (FROM_STATUS[it.status] || "zablokowany");
+    t.innerHTML = `<img alt="Kafelek ${it.id}" src="/review/${SET}/images/${it.id}.jpg"><canvas></canvas>`
+      + `<span class="num">${k < 10 ? (k + 1) % 10 : ""}</span>`
+      + (it.prio_kwp >= 50 ? `<span class="kwp">budynek ~${Math.round(it.prio_kwp)} kWp</span>` : "")
+      + `<span class="tag">${t.dataset.state === "zablokowany" ? it.status : TAGS[t.dataset.state] || ""}</span>`;
+    overlay(it.id, t.querySelector("canvas"));
+    t.addEventListener("click", e => {
+      if (e.metaKey || e.ctrlKey) { window.open(`/popraw?set=${encodeURIComponent(SET)}&id=${it.id}`, "_blank"); return; }
+      cycle(k, e.shiftKey ? "brak" : null);
+    });
+    t.addEventListener("mouseenter", () => hover = k);
+    t.addEventListener("mouseleave", () => { if (hover === k) hover = null; });
+    grid.appendChild(t);
+  });
+  layout(); renderMeta(); t0 = performance.now();
+  if (!page.length) grid.innerHTML = `<p class="muted" style="color:#fff">Wszystkie kafelki treningowe przejrzane. Złe czekają w edytorze w kolejce „do poprawy”.</p>`;
+  // Następna strona: zdjęcia do pamięci podręcznej przeglądarki.
+  if (hist === history.length - 1) queue().filter(i => !ids.includes(i.id)).slice(0, page.length)
+    .forEach(i => { new Image().src = `/review/${SET}/images/${i.id}.jpg`; });
+}
+
+function cycle(k, to) {
+  const t = grid.children[k];
+  if (!t || t.dataset.state === "zablokowany") return;
+  const state = to && t.dataset.state !== to ? to : NEXT[t.dataset.state];
+  const mk = masks.get(page[k].id);
+  if (state === "ok" && mk) { mk.m = mk.orig.slice(); mk.undo = []; edited(k); return; }  // dobra = propozycja bez zmian
+  setState(k, state);
+}
+
+function nextPage() {
+  const n = +$("size").value;
+  history = history.slice(0, hist + 1);
+  history.push(queue().slice(0, n).map(i => i.id));
+  hist = history.length - 1;
+  show(history[hist]);
+}
+
+async function commit() {
+  if (busy || !page.length) return;
+  busy = true;
+  const tiles = [...grid.children], sec = ((performance.now() - t0) / 1000 / page.length).toFixed(1);
+  try {
+    await Promise.all(page.map(async (it, k) => {
+      const state = tiles[k].dataset.state;
+      if (state === "zablokowany") return;
+      const mk = masks.get(it.id);
+      const q = new URLSearchParams({ set: SET, id: it.id, status: TO_STATUS[state], start: it.start,
+        sec, who: $("who").value, via: "siatka" });
+      if (state === "edyt") { q.set("h", mk.h); q.set("w", mk.w); }
+      const r = await fetch(`/api/popraw/save?${q}`, { method: "POST", body: state === "edyt" ? mk.m : undefined,
+        headers: state === "edyt" ? { "Content-Type": "application/octet-stream" } : {} });
+      if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+      if (it.status == null) doneHere++;
+      it.status = (await r.json()).status;
+    }));
+  } catch (e) { busy = false; renderMeta(); say(`Nie zapisano (${e.message}). Sprawdź tunel/VPN.`, 5000); return; }
+  busy = false;
+  if (hist < history.length - 1) { hist++; show(history[hist]); } else nextPage();
+}
+
+$("b-ok").onclick = commit;
+$("b-prev").onclick = () => { if (hist > 0) { hist--; show(history[hist]); } else say("To pierwsza strona w tej sesji"); };
+$("size").addEventListener("change", () => { try { localStorage.setItem("siatka_size", $("size").value); } catch (e) {} if (hist === history.length - 1) { history.pop(); hist--; nextPage(); } });
+$("order").addEventListener("change", () => { if (hist === history.length - 1) { history.pop(); hist--; nextPage(); } });
+
+function openZoom(k) {
+  if (k == null || !grid.children[k] || !masks.get(page[k].id)) return;
+  zoomK = k;
+  zoom.querySelector("img").src = grid.children[k].querySelector("img").src;
+  paint(page[k].id, zoom.querySelector("canvas"));
+  zoom.classList.add("on");
+}
+function closeZoom() { zoom.classList.remove("on"); zoomK = null; }
+zoom.querySelector("div").addEventListener("click", e => {
+  const box = e.currentTarget.getBoundingClientRect(), mk = masks.get(page[zoomK].id);
+  if (grid.children[zoomK].dataset.state === "zablokowany") { say("Kafelek już poprawiony w edytorze"); return; }
+  removeBlob(zoomK, Math.floor((e.clientX - box.left) / box.width * mk.w), Math.floor((e.clientY - box.top) / box.height * mk.h));
+});
+zoom.addEventListener("click", e => { if (e.target === zoom) closeZoom(); });
+
+function zoomKeys(e) {
+  const k = e.key.toLowerCase(), mk = masks.get(page[zoomK].id);
+  if ((e.metaKey || e.ctrlKey) && k === "z" || e.key === "Backspace") {
+    const last = mk.undo.pop();
+    if (last) { for (const i of last) mk.m[i] = 1; edited(zoomK); }
+  } else if (k === "z" || e.key === "Escape") closeZoom();
+  else if (k === "r") { mk.m = mk.orig.slice(); mk.undo = []; edited(zoomK); }
+  else if (k === "n") { cycle(zoomK, "brak"); closeZoom(); }
+  else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+    const n = zoomK + (e.key === "ArrowRight" ? 1 : -1);
+    if (n >= 0 && n < page.length) openZoom(n);
+  } else if (k === "h") document.body.classList.add("hide");
+  else return;
+  e.preventDefault();
+}
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (zoomK != null) { zoomKeys(e); return; }
+  if (e.metaKey || e.ctrlKey) return;
+  const k = e.key.toLowerCase();
+  if (e.key === "Enter") { e.preventDefault(); commit(); }
+  else if (e.key === "ArrowLeft") $("b-prev").click();
+  else if (/^[0-9]$/.test(e.key)) cycle((+e.key + 9) % 10, null);
+  else if (k === "h") document.body.classList.add("hide");
+  else if (k === "z" && !e.repeat) openZoom(hover);
+  else return;
+  e.preventDefault();
+});
+document.addEventListener("keyup", e => {
+  if (e.key.toLowerCase() === "h") document.body.classList.remove("hide");
+});
+window.addEventListener("resize", layout);
+
+fetch(`/api/popraw/items?set=${encodeURIComponent(SET)}`).then(r => {
+  if (!r.ok) throw new Error(`zestaw ${SET} nie istnieje`); return r.json();
+}).then(data => { items = data; nextPage(); })
+  .catch(e => { grid.innerHTML = `<p class="err">Nie wczytano: ${e.message}</p>`; });
+</script>
+</body>
+</html>
